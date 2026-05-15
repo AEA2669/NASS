@@ -1,0 +1,25 @@
+[build]
+  publish = "."
+
+[[redirects]]
+  from = "/api/operations-plan"
+  to = "https://nasstatus.faa.gov/api/operations-plan"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/airport-events"
+  to = "https://nasstatus.faa.gov/api/airport-events"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/airport-status-information"
+  to = "https://nasstatus.faa.gov/api/airport-status-information"
+  status = 200
+  force = true
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Cache-Control = "public, max-age=60"
