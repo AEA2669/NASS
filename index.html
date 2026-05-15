@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NAS Status — Live National Airspace</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>✈️</text></svg>">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        :root {
+            --bg: #0a0e1a;
+            --surface: rgba(255,255,255,0.04);
+            --surface-hover: rgba(255,255,255,0.07);
+            --border: rgba(255,255,255,0.08);
+            --text: #e2e8f0;
+            --text-dim: #64748b;
+            --accent: #3b82f6;
+            --accent-glow: rgba(59,130,246,0.15);
+            --red: #ef4444;
+            --red-bg: rgba(239,68,68,0.1);
+            --red-border: rgba(239,68,68,0.25);
+            --orange: #f97316;
+            --orange-bg: rgba(249,115,22,0.1);
+            --orange-border: rgba(249,115,22,0.25);
+            --yellow: #eab308;
+            --yellow-bg: rgba(234,179,8,0.1);
+            --yellow-border: rgba(234,179,8,0.25);
+            --green: #22c55e;
+            --green-bg: rgba(34,197,94,0.1);
+        }
+        html, body { height: 100vh; overflow: hidden; background: var(--bg); color: var(--text); font-family: 'Inter', system-ui, sans-serif; }
+        body { display: flex; flex-direction: column; }
+
+        /* Header */
+        .header {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 0.5rem 1.25rem;
+            background: linear-gradient(135deg, rgba(59,130,246,0.12), rgba(139,92,246,0.08));
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+        }
+        .header-left { display: flex; align-items: center; gap: 0.75rem; }
+        .logo-icon {
+            width: 2rem; height: 2rem; background: var(--accent); border-radius: 0.5rem;
+            display: flex; align-items: center; justify-content: center; font-size: 1rem;
+            box-shadow: 0 0 20px var(--accent-glow);
+        }
+        .header-title { font-size: 1.25rem; font-weight: 800; letter-spacing: -0.02em; }
+        .header-title span { color: var(--accent); }
+        .header-right { display: flex; align-items: center; gap: 1.5rem; }
+        .zulu-clock {
+            font-family: 'JetBrains Mono', monospace; font-size: 1.5rem; font-weight: 700;
+            color: var(--accent); text-shadow: 0 0 20px var(--accent-glow);
+            letter-spacing: 0.05em;
+        }
+        .status-pill {
+            display: flex; align-items: center; gap: 0.4rem;
+            padding: 0.25rem 0.75rem; border-radius: 999px;
+            background: var(--green-bg); border: 1px solid rgba(34,197,94,0.3);
+            font-size: 0.7rem; font-weight: 600; color: var(--green);
+        }
+        .status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+        .update-text { font-size: 0.65rem; color: var(--text-dim); }
+
+        /* Main grid */
+        .main { flex: 1; display: grid; grid-template-columns: 1fr 1.5fr 1.5fr; gap: 0.5rem; padding: 0.5rem; min-height: 0; }
+
+        /* Panels */
+        .panel {
+            background: var(--surface); border: 1px solid var(--border); border-radius: 0.75rem;
+            display: flex; flex-direction: column; min-height: 0; overflow: hidden;
+            backdrop-filter: blur(10px);
+        }
+        .panel-header {
+            padding: 0.6rem 0.85rem; border-bottom: 1px solid var(--border);
+            display: flex; align-items: center; justify-content: space-between; flex-shrink: 0;
+        }
+        .panel-title {
+            font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em;
+            color: var(--text-dim);
+        }
+        .panel-count {
+            font-size: 0.6rem; font-weight: 700; padding: 0.15rem 0.5rem; border-radius: 999px;
+            background: var(--accent-glow); color: var(--accent);
+        }
+        .panel-body { flex: 1; overflow-y: auto; padding: 0.5rem; }
+        .panel-body::-webkit-scrollbar { width: 4px; }
+        .panel-body::-webkit-scrollbar-track { background: transparent; }
+        .panel-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+        /* Cards */
+        .card {
+            background: var(--surface); border: 1px solid var(--border); border-radius: 0.5rem;
+            padding: 0.6rem 0.75rem; margin-bottom: 0.4rem; transition: background 0.15s;
+        }
+        .card:hover { background: var(--surface-hover); }
+        .card-urgent { border-color: var(--red-border); background: var(--red-bg); }
+        .card-urgent:hover { background: rgba(239,68,68,0.15); }
+        .card-delay { border-color: var(--orange-border); background: var(--orange-bg); }
+        .card-delay:hover { background: rgba(249,115,22,0.15); }
+        .card-warn { border-color: var(--yellow-border); background: var(--yellow-bg); }
+
+        /* Airport code */
+        .airport-code { font-size: 1.75rem; font-weight: 900; letter-spacing: -0.03em; line-height: 1; }
+        .airport-name { font-size: 0.6rem; color: var(--text-dim); text-transform: uppercase; font-weight: 600; letter-spacing: 0.05em; }
+
+        /* Badges */
+        .badge {
+            display: inline-flex; align-items: center; gap: 0.25rem;
+            padding: 0.15rem 0.5rem; border-radius: 999px;
+            font-size: 0.6rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+        }
+        .badge-red { background: var(--red-bg); color: var(--red); border: 1px solid var(--red-border); }
+        .badge-orange { background: var(--orange-bg); color: var(--orange); border: 1px solid var(--orange-border); }
+        .badge-yellow { background: var(--yellow-bg); color: var(--yellow); border: 1px solid var(--yellow-border); }
+        .badge-blue { background: var(--accent-glow); color: var(--accent); border: 1px solid rgba(59,130,246,0.25); }
+        .badge-green { background: var(--green-bg); color: var(--green); border: 1px solid rgba(34,197,94,0.25); }
+
+        /* Ops plan items */
+        .ops-item {
+            display: flex; gap: 0.5rem; padding: 0.4rem 0; border-bottom: 1px solid var(--border);
+        }
+        .ops-item:last-child { border-bottom: none; }
+        .ops-time {
+            font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; font-weight: 700;
+            color: var(--accent); white-space: nowrap; min-width: 5rem;
+        }
+        .ops-desc { font-size: 0.8rem; color: var(--text); line-height: 1.3; }
+        .ops-section-title {
+            font-size: 0.6rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.12em;
+            color: var(--text-dim); padding: 0.5rem 0 0.25rem; border-bottom: 1px solid var(--border); margin-bottom: 0.25rem;
+        }
+
+        /* Sub-event blocks inside airport cards */
+        .sub-event {
+            margin-top: 0.4rem; padding: 0.4rem 0.6rem; border-radius: 0.375rem;
+            border-left: 3px solid; font-size: 0.75rem;
+        }
+        .sub-ground-delay { border-color: var(--orange); background: var(--orange-bg); }
+        .sub-arrival-delay { border-color: var(--yellow); background: var(--yellow-bg); }
+        .sub-ground-stop { border-color: var(--red); background: var(--red-bg); }
+        .sub-closure { border-color: var(--red); background: rgba(239,68,68,0.08); }
+        .sub-freeform { border-color: var(--border); background: var(--surface); }
+
+        .detail-label { font-size: 0.6rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.7; }
+        .detail-value { font-weight: 600; }
+        .time-range { font-family: 'JetBrains Mono', monospace; font-size: 0.65rem; color: var(--text-dim); margin-top: 0.2rem; }
+
+        /* Footer */
+        .footer {
+            padding: 0.25rem 1rem; border-top: 1px solid var(--border);
+            font-size: 0.6rem; color: var(--text-dim); text-align: center; flex-shrink: 0;
+        }
+        .footer a { color: var(--accent); text-decoration: none; }
+        .footer a:hover { text-decoration: underline; }
+
+        /* Loading */
+        .loader-wrap { display: flex; align-items: center; justify-content: center; height: 100%; }
+        .spinner {
+            width: 24px; height: 24px; border: 2px solid var(--border); border-top-color: var(--accent);
+            border-radius: 50%; animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Empty state */
+        .empty { text-align: center; padding: 2rem; color: var(--text-dim); font-size: 0.85rem; }
+        .empty-icon { font-size: 2rem; margin-bottom: 0.5rem; }
+
+        /* Config badge */
+        .config-info { font-family: 'JetBrains Mono', monospace; font-size: 0.6rem; color: var(--text-dim); text-align: right; }
+
+        /* Watched airports strip */
+        .watched-strip {
+            display: flex; align-items: center; gap: 0.5rem; padding: 0.35rem 1rem;
+            background: rgba(255,255,255,0.02); border-bottom: 1px solid var(--border); flex-shrink: 0; overflow-x: auto;
+        }
+        .watched-label {
+            font-size: 0.55rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em;
+            color: var(--text-dim); white-space: nowrap; margin-right: 0.25rem;
+        }
+        .watched-chip {
+            display: flex; align-items: center; gap: 0.35rem;
+            padding: 0.2rem 0.6rem; border-radius: 0.375rem;
+            font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; font-weight: 800;
+            border: 1px solid var(--border); background: var(--surface); white-space: nowrap;
+            transition: all 0.2s;
+        }
+        .watched-chip .chip-dot {
+            width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+        }
+        .watched-chip.chip-clear { color: var(--green); border-color: rgba(34,197,94,0.25); }
+        .watched-chip.chip-clear .chip-dot { background: var(--green); }
+        .watched-chip.chip-delay { color: var(--orange); border-color: var(--orange-border); background: var(--orange-bg); }
+        .watched-chip.chip-delay .chip-dot { background: var(--orange); animation: pulse 2s infinite; }
+        .watched-chip.chip-stop { color: var(--red); border-color: var(--red-border); background: var(--red-bg); }
+        .watched-chip.chip-stop .chip-dot { background: var(--red); animation: pulse 1.5s infinite; }
+        .watched-chip.chip-closure { color: var(--red); border-color: var(--red-border); background: rgba(239,68,68,0.15); }
+        .watched-chip.chip-closure .chip-dot { background: var(--red); }
+        .watched-chip.chip-event { color: var(--yellow); border-color: var(--yellow-border); background: var(--yellow-bg); }
+        .watched-chip.chip-event .chip-dot { background: var(--yellow); animation: pulse 2s infinite; }
+        .chip-detail { font-size: 0.55rem; font-weight: 600; opacity: 0.85; }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div class="header-left">
+            <div class="logo-icon">✈</div>
+            <div>
+                <div class="header-title"><span>NAS</span> Status</div>
+            </div>
+        </div>
+        <div class="header-right">
+            <div class="status-pill"><div class="status-dot"></div> LIVE</div>
+            <div class="zulu-clock" id="utc-clock">00:00:00Z</div>
+            <div class="update-text" id="update-time">Connecting...</div>
+        </div>
+    </header>
+
+    <div class="watched-strip" id="watched-strip">
+        <div class="watched-label">✦ Key Airports</div>
+    </div>
+
+    <main class="main">
+        <!-- Operations Plan -->
+        <div class="panel">
+            <div class="panel-header">
+                <div class="panel-title">📋 Operations Plan</div>
+                <div class="panel-count" id="ops-count">—</div>
+            </div>
+            <div class="panel-body" id="ops-plan-content">
+                <div class="loader-wrap"><div class="spinner"></div></div>
+            </div>
+        </div>
+
+        <!-- Delays & Closures -->
+        <div class="panel">
+            <div class="panel-header">
+                <div class="panel-title">⚠️ Delays & Closures</div>
+                <div class="panel-count" id="status-count">—</div>
+            </div>
+            <div class="panel-body" id="status-content">
+                <div class="loader-wrap"><div class="spinner"></div></div>
+            </div>
+        </div>
+
+        <!-- Airport Events -->
+        <div class="panel">
+            <div class="panel-header">
+                <div class="panel-title">🛫 Airport Events</div>
+                <div class="panel-count" id="events-count">—</div>
+            </div>
+            <div class="panel-body" id="events-content">
+                <div class="loader-wrap"><div class="spinner"></div></div>
+            </div>
+        </div>
+    </main>
+
+    <footer class="footer">
+        Data from <a href="https://nasstatus.faa.gov/" target="_blank">FAA NAS</a> · Live via Netlify proxy · Auto-refreshes every 2 min
+    </footer>
+
+    <script>
+        // ── Helpers ──
+        function fmtLocal(iso) {
+            if (!iso) return '';
+            const d = new Date(iso);
+            const day = d.getDate();
+            const t = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+            const tz = d.toLocaleTimeString([], { timeZoneName: 'short' }).split(' ').pop();
+            const z = d.getUTCHours().toString().padStart(2,'0') + d.getUTCMinutes().toString().padStart(2,'0') + 'Z';
+            return `${day}/${t} ${tz} (${z})`;
+        }
+        function fmtRange(s, e) {
+            if (!s || !e) return '';
+            return `${fmtLocal(s)} — ${fmtLocal(e)}`;
+        }
+        function cleanNotam(raw, clean) {
+            if (clean) {
+                const isClosure = raw && /AP\sCLSD/.test(raw);
+                return (isClosure ? 'Airport Closed: ' : '') + clean;
+            }
+            if (!raw) return '';
+            let c = raw.replace(/\d{10}-\d{10}$/, '');
+            c = c.replace(/^![A-Z]{3}\s\d+\/\d+\s[A-Z]{3}\sAD\sAP\sCLSD\s/, 'Airport Closed: ');
+            return c.trim();
+        }
+        function isClosure(ev) {
+            return ev.airportClosure || (ev.freeForm?.simpleText && /AP\sCLSD/.test(ev.freeForm.simpleText));
+        }
+        function hl(text) {
+            return text.replace(/\b([A-Z]{3})\b/g, '<span style="color:var(--accent);font-weight:700">$1</span>');
+        }
+        function parseOps(ev) {
+            const p = ev.split('\t-');
+            return p.length === 2 ? { time: p[0].trim(), desc: p[1].trim() } : { time: '', desc: ev };
+        }
+
+        // ── Data fetching ──
+        // On Netlify, /api/* proxies to FAA. Locally, fall back to data/ folder.
+        async function fetchJSON(path) {
+            try {
+                const r = await fetch('/api/' + path);
+                if (r.ok) return await r.json();
+            } catch(e) {}
+            const r2 = await fetch('data/' + path + '.json');
+            return await r2.json();
+        }
+        async function fetchXML(path) {
+            try {
+                const r = await fetch('/api/' + path);
+                if (r.ok) { const t = await r.text(); return new DOMParser().parseFromString(t, 'text/xml'); }
+            } catch(e) {}
+            const r2 = await fetch('data/' + path + '.xml');
+            const t2 = await r2.text();
+            return new DOMParser().parseFromString(t2, 'text/xml');
+        }
+
+        async function loadAll() {
+            try {
+                const [ops, events, statusDoc] = await Promise.all([
+                    fetchJSON('operations-plan'),
+                    fetchJSON('airport-events'),
+                    fetchXML('airport-status-information')
+                ]);
+                renderOps(ops);
+                renderStatus(statusDoc);
+                renderEvents(events);
+                watchedState = buildWatchedState(events, statusDoc, ops);
+                renderWatched(watchedState);
+                const ut = statusDoc.querySelector('Update_Time');
+                document.getElementById('update-time').textContent = ut ? ut.textContent : new Date().toLocaleString();
+            } catch(err) {
+                console.error(err);
+                const msg = '<div class="empty"><div class="empty-icon">⚠️</div>Failed to load data</div>';
+                ['ops-plan-content','status-content','events-content'].forEach(id => document.getElementById(id).innerHTML = msg);
+            }
+        }
+
+        // ── Render: Ops Plan ──
+        function renderOps(data) {
+            const el = document.getElementById('ops-plan-content');
+            if (!data) return;
+            const total = (data.terminalPlanned?.length || 0) + (data.enRoutePlanned?.length || 0);
+            document.getElementById('ops-count').textContent = total;
+
+            let h = '';
+            const section = (title, items) => {
+                let s = `<div class="ops-section-title">${title}</div>`;
+                if (!items?.length) { s += '<div class="empty" style="padding:0.5rem">None</div>'; return s; }
+                items.forEach(i => {
+                    const p = parseOps(i.event);
+                    s += `<div class="ops-item">
+                        <div class="ops-time">${p.time}</div>
+                        <div class="ops-desc">${hl(p.desc)}</div>
+                    </div>`;
+                });
+                return s;
+            };
+            h += section('Terminal', data.terminalPlanned);
+            h += section('En Route', data.enRoutePlanned);
+            el.innerHTML = h;
+        }
+
+        // ── Render: Delays & Closures (XML) ──
+        function renderStatus(doc) {
+            const el = document.getElementById('status-content');
+            const types = doc.querySelectorAll('Delay_type');
+            let count = 0;
+            let h = '';
+
+            types.forEach(type => {
+                type.querySelectorAll('Ground_Delay').forEach(d => {
+                    count++;
+                    const arpt = d.querySelector('ARPT').textContent;
+                    const reason = d.querySelector('Reason').textContent;
+                    const avg = d.querySelector('Avg').textContent;
+                    const max = d.querySelector('Max')?.textContent || '—';
+                    h += `<div class="card card-delay">
+                        <div style="display:flex;align-items:center;gap:0.75rem">
+                            <div class="airport-code" style="color:var(--orange)">${arpt}</div>
+                            <div style="flex:1">
+                                <div style="display:flex;align-items:center;gap:0.4rem;margin-bottom:0.2rem">
+                                    <span class="badge badge-orange">Ground Delay</span>
+                                    <span style="font-family:'JetBrains Mono',monospace;font-size:0.85rem;font-weight:700;color:var(--orange)">${avg}</span>
+                                </div>
+                                <div style="font-size:0.75rem;color:var(--text-dim)">${reason}</div>
+                                <div style="font-size:0.65rem;color:var(--text-dim);margin-top:0.15rem">Max: ${max}</div>
+                            </div>
+                        </div>
+                    </div>`;
+                });
+
+                type.querySelectorAll('Airport').forEach(c => {
+                    count++;
+                    const arpt = c.querySelector('ARPT').textContent;
+                    const reason = c.querySelector('Reason').textContent;
+                    const start = c.querySelector('Start').textContent;
+                    const reopen = c.querySelector('Reopen').textContent;
+                    h += `<div class="card card-urgent">
+                        <div style="display:flex;align-items:center;gap:0.75rem">
+                            <div class="airport-code" style="color:var(--red)">${arpt}</div>
+                            <div style="flex:1">
+                                <div style="margin-bottom:0.25rem"><span class="badge badge-red">Closed</span></div>
+                                <div style="font-size:0.75rem;color:var(--text);line-height:1.3">${cleanNotam(reason, null)}</div>
+                                <div style="font-size:0.65rem;margin-top:0.2rem">
+                                    <span style="color:var(--red)">From: ${start}</span><br>
+                                    <span style="color:var(--green)">Reopen: ${reopen}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>`;
+                });
+            });
+
+            document.getElementById('status-count').textContent = count;
+            if (count === 0) {
+                el.innerHTML = '<div class="empty"><div class="empty-icon">✅</div>No active delays or closures</div>';
+            } else {
+                el.innerHTML = h;
+            }
+        }
+
+        // ── Render: Airport Events (JSON) ──
+        function renderEvents(data) {
+            const el = document.getElementById('events-content');
+            if (!data?.length) {
+                el.innerHTML = '<div class="empty"><div class="empty-icon">✅</div>No airport events</div>';
+                document.getElementById('events-count').textContent = '0';
+                return;
+            }
+            document.getElementById('events-count').textContent = data.length;
+
+            let h = '';
+            data.forEach(ev => {
+                const urgent = isClosure(ev) || (ev.groundStop) || (ev.groundDelay?.avgDelay > 45);
+                const cls = urgent ? 'card card-urgent' : 'card';
+
+                h += `<div class="${cls}">
+                    <div style="display:flex;justify-content:space-between;align-items:flex-start">
+                        <div>
+                            <span class="airport-code">${ev.airportId}</span>
+                            <span class="airport-name" style="margin-left:0.5rem">${ev.airportLongName || ''}</span>
+                        </div>
+                        ${ev.airportConfig ? `<div class="config-info">
+                            ${ev.airportConfig.arrivalRate}/hr · ${ev.airportConfig.arrivalRunwayConfig}
+                        </div>` : ''}
+                    </div>`;
+
+                if (ev.groundStop) {
+                    h += `<div class="sub-event sub-ground-stop">
+                        <div style="display:flex;justify-content:space-between;align-items:center">
+                            <span class="badge badge-red">⚠ Ground Stop</span>
+                        </div>
+                        <div class="detail-value" style="color:var(--red);margin-top:0.2rem">${ev.groundStop.reason || ev.groundStop.impactingCondition || ''}</div>
+                        <div class="time-range">Until: ${fmtLocal(ev.groundStop.endTime)}</div>
+                    </div>`;
+                }
+
+                if (ev.groundDelay) {
+                    h += `<div class="sub-event sub-ground-delay">
+                        <div style="display:flex;justify-content:space-between;align-items:center">
+                            <span class="badge badge-orange">Ground Delay</span>
+                            <span style="font-family:'JetBrains Mono',monospace;font-size:0.75rem;font-weight:700;color:var(--orange)">${Math.round(ev.groundDelay.avgDelay)}m avg</span>
+                        </div>
+                        <div style="font-size:0.7rem;color:var(--text);margin-top:0.15rem">${ev.groundDelay.impactingCondition}</div>
+                        <div class="time-range">${fmtRange(ev.groundDelay.startTime, ev.groundDelay.endTime)}</div>
+                    </div>`;
+                }
+
+                if (ev.arrivalDelay) {
+                    h += `<div class="sub-event sub-arrival-delay">
+                        <div style="display:flex;justify-content:space-between;align-items:center">
+                            <span class="badge badge-yellow">Arrival Delay</span>
+                            <span style="font-family:'JetBrains Mono',monospace;font-size:0.75rem;font-weight:700;color:var(--yellow)">${ev.arrivalDelay.min}–${ev.arrivalDelay.max}m</span>
+                        </div>
+                        <div style="font-size:0.7rem;color:var(--text);margin-top:0.15rem">${ev.arrivalDelay.reason}</div>
+                    </div>`;
+                }
+
+                if (ev.freeForm) {
+                    const txt = cleanNotam(ev.freeForm.simpleText, ev.freeForm.text);
+                    const isCl = ev.freeForm.simpleText && /AP\sCLSD/.test(ev.freeForm.simpleText);
+                    h += `<div class="sub-event ${isCl ? 'sub-closure' : 'sub-freeform'}">
+                        <div style="font-size:0.75rem;color:var(--text);line-height:1.3">${txt}</div>
+                        <div class="time-range">${fmtRange(ev.freeForm.startTime, ev.freeForm.endTime)}</div>
+                    </div>`;
+                }
+
+                h += `</div>`;
+            });
+            el.innerHTML = h;
+        }
+
+        // ── Clock ──
+        function tick() {
+            const n = new Date();
+            const h = String(n.getUTCHours()).padStart(2,'0');
+            const m = String(n.getUTCMinutes()).padStart(2,'0');
+            const s = String(n.getUTCSeconds()).padStart(2,'0');
+            document.getElementById('utc-clock').textContent = `${h}:${m}:${s}Z`;
+        }
+        setInterval(tick, 1000);
+        tick();
+
+        // ── Watched Airports ──
+        const WATCHED = ['DFW','CLT','ORD','JFK','LGA','BOS','MIA','PHX','LAX'];
+        let watchedState = {};
+
+        function buildWatchedState(events, statusDoc, ops) {
+            const state = {};
+            WATCHED.forEach(code => state[code] = { status: 'clear', details: [] });
+
+            // Check airport-events JSON
+            if (events?.length) {
+                events.forEach(ev => {
+                    const id = ev.airportId;
+                    if (!state[id]) return;
+                    if (ev.groundStop) {
+                        state[id].status = 'stop';
+                        state[id].details.push('Ground Stop');
+                    }
+                    if (ev.groundDelay) {
+                        if (state[id].status !== 'stop') state[id].status = 'delay';
+                        state[id].details.push(`GD ${Math.round(ev.groundDelay.avgDelay)}m`);
+                    }
+                    if (ev.arrivalDelay) {
+                        if (state[id].status === 'clear') state[id].status = 'event';
+                        state[id].details.push(`Arr ${ev.arrivalDelay.min}-${ev.arrivalDelay.max}m`);
+                    }
+                    if (isClosure(ev)) {
+                        state[id].status = 'closure';
+                        state[id].details.push('Closed');
+                    }
+                    if (ev.freeForm && !isClosure(ev)) {
+                        if (state[id].status === 'clear') state[id].status = 'event';
+                        state[id].details.push('NOTAM');
+                    }
+                });
+            }
+
+            // Check XML status
+            if (statusDoc) {
+                statusDoc.querySelectorAll('Ground_Delay').forEach(d => {
+                    const code = d.querySelector('ARPT')?.textContent;
+                    if (!state[code]) return;
+                    if (state[code].status === 'clear') state[code].status = 'delay';
+                    const avg = d.querySelector('Avg')?.textContent || '';
+                    if (!state[code].details.some(d => d.startsWith('GD'))) state[code].details.push(`GD ${avg}`);
+                });
+                statusDoc.querySelectorAll('Airport_Closure_List Airport').forEach(c => {
+                    const code = c.querySelector('ARPT')?.textContent;
+                    if (!state[code]) return;
+                    state[code].status = 'closure';
+                    if (!state[code].details.includes('Closed')) state[code].details.push('Closed');
+                });
+            }
+
+            // Check ops plan for mentions
+            if (ops) {
+                const allOps = [...(ops.terminalPlanned || []), ...(ops.enRoutePlanned || [])];
+                allOps.forEach(item => {
+                    WATCHED.forEach(code => {
+                        if (item.event.includes(code) && state[code].status === 'clear') {
+                            state[code].status = 'event';
+                            if (!state[code].details.includes('Ops Plan')) state[code].details.push('Ops Plan');
+                        }
+                    });
+                });
+            }
+
+            return state;
+        }
+
+        function renderWatched(state) {
+            const strip = document.getElementById('watched-strip');
+            let h = '<div class="watched-label">✦ Key Airports</div>';
+            WATCHED.forEach(code => {
+                const s = state[code];
+                const cls = `chip-${s.status}`;
+                const detail = s.details.length ? s.details.join(' · ') : 'Clear';
+                h += `<div class="watched-chip ${cls}">
+                    <div class="chip-dot"></div>
+                    ${code}
+                    <span class="chip-detail">${detail}</span>
+                </div>`;
+            });
+            strip.innerHTML = h;
+        }
+
+        // ── Init ──
+        loadAll();
+        setInterval(loadAll, 2 * 60 * 1000);
+    </script>
+</body>
+</html>
